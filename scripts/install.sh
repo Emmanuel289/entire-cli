@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+SOURCE_DIR=$( cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd )
+
 GITHUB_REPO="entireio/cli"
 DEFAULT_INSTALL_DIR="$HOME/.local/bin"
 
@@ -114,7 +117,42 @@ verify_checksum() {
     fi
 }
 
+install_from_source() {
+    local mode
+    mode="${1:-}"
+
+    if [[ ${mode} == 'dev' ]]; then
+        info "Installing Entire CLI from the source directory: ${SOURCE_DIR}/cmd..."
+        
+        # Remove any previous installation of the Entire CLI.
+        local path_binary
+        path_binary=$(command -v "entire" 2>/dev/null || true)
+        if [ -n "${path_binary}" ]; then
+            warn "Removing a previous installation of Entire CLI at ${path_binary}..."
+            rm "${path_binary}"
+        fi
+        
+        info "Building from the source directory: ${SOURCE_DIR}/cmd"
+        if ! ( cd "${SOURCE_DIR}" && GOBIN=${HOME}/.local/bin go install ./cmd/...); then
+            error "Failed to build from source. Check that go is installed and the source is valid."
+        fi
+
+        # Verify installation
+        if ! command -v entire &> /dev/null; then
+            error "Installation completed but 'entire' not found in PATH. Add ${HOME}/.local/bin to your PATH."
+        fi
+
+        success "Dev installation successful!"
+        info "Running post-install actions..."
+        local install_path="${DEFAULT_INSTALL_DIR}/entire"
+        "$install_path" curl-bash-post-install
+        exit 0
+    fi
+
+}
+
 main() {
+    install_from_source "${1:-}"
     if ! command -v curl &> /dev/null; then
         error "curl is required but not installed. Please install curl and try again."
     fi
