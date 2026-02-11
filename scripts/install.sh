@@ -123,7 +123,6 @@ install_from_source() {
 
     if [[ ${mode} == 'dev' ]]; then
         info "Installing Entire CLI from the source directory: ${SOURCE_DIR}/cmd..."
-        
         # Remove any previous installation of the Entire CLI.
         local path_binary
         path_binary=$(command -v "entire" 2>/dev/null || true)
@@ -141,8 +140,7 @@ install_from_source() {
         if ! command -v entire &> /dev/null; then
             error "Installation completed but 'entire' not found in PATH. Add ${HOME}/.local/bin to your PATH."
         fi
-
-        success "Dev installation successful!"
+        
         info "Running post-install actions..."
         local install_path="${DEFAULT_INSTALL_DIR}/entire"
         "$install_path" curl-bash-post-install
