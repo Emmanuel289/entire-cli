@@ -38,6 +38,15 @@ const (
 // Each package needs its own package-scoped sentinel for git log iteration patterns.
 var errStop = errors.New("stop iteration")
 
+// IsEmptyRepository returns true if the repository has no commits yet.
+// After git-init, HEAD points to an unborn branch (e.g., refs/heads/main)
+// whose target does not yet exist. repo.Head() returns ErrReferenceNotFound
+// in this case.
+func IsEmptyRepository(repo *git.Repository) bool {
+	_, err := repo.Head()
+	return errors.Is(err, plumbing.ErrReferenceNotFound)
+}
+
 // IsAncestorOf checks if commit is an ancestor of (or equal to) target.
 // Returns true if target can reach commit by following parent links.
 // Limits search to 1000 commits to avoid excessive traversal.
@@ -291,9 +300,10 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 
 	// Create orphan commit (no parent)
 	now := time.Now()
+	authorName, authorEmail := GetGitAuthorFromRepo(repo)
 	sig := object.Signature{
-		Name:  "Entire",
-		Email: "entire@local",
+		Name:  authorName,
+		Email: authorEmail,
 		When:  now,
 	}
 
@@ -456,6 +466,35 @@ func ReadSessionPromptFromTree(tree *object.Tree, checkpointPath string) string 
 	}
 
 	return ExtractFirstPrompt(content)
+}
+
+// ReadAgentTypeFromTree reads the agent type from a checkpoint's metadata.json file in a git tree.
+// If metadata.json doesn't exist (shadow branches), it falls back to detecting the agent
+// from the presence of agent-specific config files (.gemini/settings.json or .claude/).
+// Returns agent.AgentTypeUnknown if the agent type cannot be determined.
+func ReadAgentTypeFromTree(tree *object.Tree, checkpointPath string) agent.AgentType {
+	// First, try to read from metadata.json (present in condensed/committed checkpoints)
+	metadataPath := checkpointPath + "/" + paths.MetadataFileName
+	if file, err := tree.File(metadataPath); err == nil {
+		if content, err := file.Contents(); err == nil {
+			var metadata checkpoint.CommittedMetadata
+			if err := json.Unmarshal([]byte(content), &metadata); err == nil && metadata.Agent != "" {
+				return metadata.Agent
+			}
+		}
+	}
+
+	// Fall back to detecting agent from config files (shadow branches don't have metadata.json)
+	// Check for Gemini config
+	if _, err := tree.File(".gemini/settings.json"); err == nil {
+		return agent.AgentTypeGemini
+	}
+	// Check for Claude config (either settings.local.json or settings.json in .claude/)
+	if _, err := tree.Tree(".claude"); err == nil {
+		return agent.AgentTypeClaudeCode
+	}
+
+	return agent.AgentTypeUnknown
 }
 
 // isOnlySeparators checks if a string contains only dashes, spaces, and newlines.
